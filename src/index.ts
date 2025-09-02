@@ -92,4 +92,77 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   
   try {
     switch (name) {
-      case 'analyze_webpage': {
+case 'analyze_webpage': {
+        const { url, includeContent = true, includeLinks = true, includeImages = true } = args as {
+          url: string;
+          includeContent?: boolean;
+          includeLinks?: boolean;
+          includeImages?: boolean;
+        };
+
+        const contentData = await contentExtractor.extractFromUrl(url);
+        const seoData = await seoAnalyzer.analyzePage(contentData, {
+          includeContent,
+          includeLinks,
+          includeImages,
+        });
+        const seontologyData = seontologyFormatter.formatAnalysis(seoData);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(seontologyData, null, 2),
+          }],
+        };
+      }
+
+      case 'extract_entities': {
+        const { url, content } = args as { url?: string; content?: string; };
+
+        let extractedContent;
+        if (url) {
+          extractedContent = await contentExtractor.extractFromUrl(url);
+        } else if (content) {
+          extractedContent = contentExtractor.extractFromText(content);
+        } else {
+          throw new Error('Either url or content must be provided');
+        }
+
+        const entities = await seoAnalyzer.extractEntities(extractedContent);
+        const formattedEntities = seontologyFormatter.formatEntities(entities);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(formattedEntities, null, 2),
+          }],
+        };
+      }
+
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  } catch (error) {
+    return {
+      content: [{
+        type: 'text',
+        text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+      }],
+      isError: true,
+    };
+  }
+});
+
+// Start HTTP server
+app.listen(port, () => {
+  console.log(`SEOntology MCP Server running on port ${port}`);
+});
+
+// Start MCP server
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.log('SEOntology MCP Server connected');
+}
+
+main().catch(console.error);
