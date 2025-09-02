@@ -2,7 +2,6 @@
 
 🚀 **MCP Server per l'integrazione con SEOntology** - Framework semantico per l'analisi e ottimizzazione SEO
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/seontology-mcp)
 
 ## 🌟 Caratteristiche
 
