@@ -1,41 +1,12 @@
 {
-  "name": "seontology-mcp-server",
-  "version": "1.0.0",
-  "lockfileVersion": 3,
-  "requires": true,
-  "packages": {
-    "": {
-      "name": "seontology-mcp-server",
-      "version": "1.0.0",
-      "license": "MIT",
-      "dependencies": {
-        "@modelcontextprotocol/sdk": "^0.5.0",
-        "@types/node": "^20.0.0",
-        "axios": "^1.6.0",
-        "cheerio": "^1.0.0-rc.12",
-        "compromise": "^14.12.0",
-        "cors": "^2.8.5",
-        "dotenv": "^16.3.0",
-        "express": "^4.18.0",
-        "helmet": "^7.1.0",
-        "natural": "^6.12.0",
-        "rate-limiter-flexible": "^5.0.3"
-      },
-      "devDependencies": {
-        "@types/cors": "^2.8.0",
-        "@types/express": "^4.17.0",
-        "@types/jest": "^29.5.0",
-        "@typescript-eslint/eslint-plugin": "^6.0.0",
-        "@typescript-eslint/parser": "^6.0.0",
-        "eslint": "^8.0.0",
-        "jest": "^29.7.0",
-        "tsx": "^4.7.0",
-        "typescript": "^5.3.0"
-      },
-      "engines": {
-        "node": ">=18.0.0",
-        "npm": ">=8.0.0"
-      }
-    }
+  "scripts": {
+    "build": "tsc && cp package.json dist/",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "watch": "tsx watch src/index.ts",
+    "lint": "eslint src --ext ts",
+    "test": "jest",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean"
   }
 }
