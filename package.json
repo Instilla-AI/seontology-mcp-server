@@ -1,12 +1,11 @@
 {
+  "type": "module",
   "scripts": {
-    "build": "tsc && cp package.json dist/",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "watch": "tsx watch src/index.ts",
-    "lint": "eslint src --ext ts",
-    "test": "jest",
-    "clean": "rm -rf dist",
-    "prebuild": "npm run clean"
+    "build": "tsc",
+    "start": "node dist/mcp-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.3.0",
+    "express": "^4.19.0"
   }
 }
