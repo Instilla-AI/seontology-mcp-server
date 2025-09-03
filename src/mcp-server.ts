@@ -38,8 +38,29 @@ app.get("/", (req, res) => {
     endpoints: {
       health: "/health",
       seontology: "/api/seontology",
+      test: "/api/test",
       mcp: "/mcp (STDIO only)"
     }
+  });
+});
+
+// Endpoint di test semplice
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Server funzionante",
+    timestamp: new Date().toISOString(),
+    query: req.query
+  });
+});
+
+app.post("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "POST test ricevuto",
+    body: req.body,
+    headers: req.headers,
+    timestamp: new Date().toISOString()
   });
 });
 
