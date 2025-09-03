@@ -1,11 +1,17 @@
 {
+  "name": "seontology-mcp",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/mcp-server.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.3.0",
-    "express": "^4.19.0"
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "express": "^4.19.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
   }
 }
