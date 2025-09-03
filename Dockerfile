@@ -1,28 +1,28 @@
-FROM node:20-alpine
-
-RUN apk add --no-cache dumb-init
-
+# 1. Build stage (TypeScript → JS)
+FROM node:20 AS builder
 WORKDIR /app
 
-COPY package*.json ./
+# Copia package e installa dipendenze
+COPY package*.json tsconfig.json ./
+RUN npm install
 
-RUN npm ci --only=production
+# Copia sorgenti
+COPY src ./src
 
-COPY . .
-
+# Compila TypeScript
 RUN npm run build
 
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S mcp -u 1001
+# 2. Runtime stage (solo JS e dipendenze prod)
+FROM node:20-slim AS runtime
+WORKDIR /app
 
-RUN chown -R mcp:nodejs /app
-USER mcp
+# Copia package.json e node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
 
-EXPOSE 3000
+# Railway userà automaticamente la variabile PORT
+ENV PORT=3000
 
-# Fixed healthcheck - uses node instead of expecting compiled healthcheck.js
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
-
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["npm", "start"]
+# Avvio server MCP
+CMD ["node", "dist/mcp-server.js"]
