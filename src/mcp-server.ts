@@ -1,74 +1,86 @@
-// src/mcp-server.ts
 import express from "express";
-import { HttpServerTransport } from "@modelcontextprotocol/sdk/transport/http";
-import { Server } from "@modelcontextprotocol/sdk/server";
+import { randomUUID } from "node:crypto";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 
 const app = express();
 app.use(express.json());
 
-const mcp = new Server({ name: "seontology-mcp", version: "0.1.0" });
+// Istanzia MCP server
+const server = new McpServer({
+  name: "seontology-mcp",
+  version: "0.1.0",
+});
 
-// Chunking minimale: separa in paragrafi
-function simpleChunk(text: string): Array<{ chunkText: string; chunkPosition: number }> {
-  return text
-    .split(/\n\s*\n/) // split su righe vuote
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map((chunk, i) => ({ chunkText: chunk, chunkPosition: i + 1 }));
-}
-
-mcp.tool("wrap_as_seontology", {
-  description: "Impacchetta URL+title+meta (e testo opzionale) in JSON-LD conforme a SEOntology",
-  parameters: {
-    type: "object",
-    properties: {
-      url: { type: "string", description: "URL canonico della pagina" },
-      title: { type: "string", description: "Titolo HTML/SEO" },
-      metaDescription: { type: "string", description: "Meta description" },
-      primaryQuery: { type: "string", description: "Query primaria target" },
-      bodyText: { type: "string", description: "Testo completo della pagina (opzionale)" },
-      language: { type: "string", description: "Codice lingua (es. it, en)", default: "it" }
-    },
-    required: ["url", "title", "metaDescription", "primaryQuery"]
+// Tool minimale: wrap_as_seontology
+server.registerTool(
+  "wrap_as_seontology",
+  {
+    title: "Wrap WebPage as SEOntology JSON-LD",
+    description:
+      "Impacchetta url/title/meta (+ testo opzionale) in JSON-LD conforme a SEOntology",
+    inputSchema: z.object({
+      url: z.string().url(),
+      title: z.string(),
+      metaDescription: z.string(),
+      primaryQuery: z.string(),
+      bodyText: z.string().optional(),
+      language: z.string().default("it"),
+    }),
   },
-  handler: async ({ url, title, metaDescription, primaryQuery, bodyText, language = "it" }) => {
-    const context = {
-      "@context": {
-        "seo": "https://seontology.org/vocab#",
-        "schema": "https://schema.org/",
-      }
-    };
-
-    const primaryQueryNode = {
-      "@type": "seo:Query",
-      "schema:name": primaryQuery,
-      "seo:intent": null // potrai popolarlo in step successivi
-    };
-
-    const chunks = bodyText ? simpleChunk(bodyText).map(c => ({
-      "@type": "seo:Chunk",
-      "seo:chunkPosition": c.chunkPosition,
-      "seo:chunkText": c.chunkText
-    })) : [];
+  async ({ url, title, metaDescription, primaryQuery, bodyText, language }) => {
+    const chunks =
+      bodyText
+        ?.split(/\n\s*\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((text, i) => ({
+          "@type": "seo:Chunk",
+          "seo:chunkPosition": i + 1,
+          "seo:chunkText": text,
+        })) ?? [];
 
     const jsonld = {
-      ...context,
+      "@context": {
+        seo: "https://seontology.org/vocab#",
+        schema: "https://schema.org/",
+      },
       "@type": "seo:WebPage",
       "@id": url,
       "schema:url": url,
       "seo:title": title,
       "seo:metaDescription": metaDescription,
-      "seo:hasPrimaryQuery": primaryQueryNode,
+      "seo:hasPrimaryQuery": {
+        "@type": "seo:Query",
+        "schema:name": primaryQuery,
+      },
       ...(chunks.length ? { "seo:hasChunk": chunks } : {}),
-      "seo:hasLanguage": language ? { "@type": "schema:Language", "schema:name": language } : undefined
+      "seo:hasLanguage": {
+        "@type": "schema:Language",
+        "schema:name": language,
+      },
     };
 
-    return { content: jsonld };
+    return { content: [{ type: "json", json: jsonld }] };
+  }
+);
+
+// Transport “Streamable HTTP” con gestione sessioni (raccomandato)
+const transports: Record<string, StreamableHTTPServerTransport> = {};
+app.all("/mcp", async (req, res) => {
+  // Crea (o riprendi) una sessione
+  const sessionId = (req.query.sessionId as string) ?? randomUUID();
+  let transport = transports[sessionId];
+  if (!transport) {
+    transport = new StreamableHTTPServerTransport({ req, res, sessionId });
+    transports[sessionId] = transport;
+    transport.onclose = () => delete transports[sessionId];
+    await server.connect(transport);
+  } else {
+    await transport.handleRequest(req, res);
   }
 });
 
-const transport = new HttpServerTransport({ app, path: "/mcp" });
-await mcp.connect(transport);
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`MCP ready on :${PORT}/mcp`));
+app.listen(PORT, () => console.log(`MCP on :${PORT}/mcp`));
