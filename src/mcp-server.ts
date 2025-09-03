@@ -11,6 +11,7 @@ import {
 // 1) Creazione dell'app Express
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Aggiungi supporto form-urlencoded
 
 // CORS per permettere chiamate da n8n
 app.use((req, res, next) => {
