@@ -38,7 +38,7 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 
 # Installa solo le dipendenze di produzione
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev && npm cache clean --force
 
 # Cambia proprietario dei file
 RUN chown -R nextjs:nodejs /app
