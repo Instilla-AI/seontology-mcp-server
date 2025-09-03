@@ -1,28 +1,57 @@
-# 1. Build stage (TypeScript → JS)
-FROM node:20 AS builder
+# Multi-stage build for SEOntology MCP Server
+
+# 1. Build stage - Compilazione TypeScript
+FROM node:20-alpine AS builder
+
 WORKDIR /app
 
-# Copia package e installa dipendenze
-COPY package*.json tsconfig.json ./
-RUN npm install
+# Installa le dipendenze necessarie per la build
+RUN apk add --no-cache python3 make g++
 
-# Copia sorgenti
-COPY src ./src
+# Copia i file di configurazione
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Installa tutte le dipendenze (dev incluse)
+RUN npm ci --only=production=false
+
+# Copia il codice sorgente
+COPY src/ ./src/
 
 # Compila TypeScript
 RUN npm run build
 
-# 2. Runtime stage (solo JS e dipendenze prod)
-FROM node:20-slim AS runtime
+# 2. Runtime stage - Produzione
+FROM node:20-alpine AS runtime
+
 WORKDIR /app
 
-# Copia package.json e node_modules
+# Installa curl per health checks
+RUN apk add --no-cache curl
+
+# Crea utente non-root per sicurezza
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+
+# Copia solo i file necessari per la produzione
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
-# Railway userà automaticamente la variabile PORT
-ENV PORT=3000
+# Installa solo le dipendenze di produzione
+RUN npm ci --only=production && npm cache clean --force
 
-# Avvio server MCP
+# Cambia proprietario dei file
+RUN chown -R nextjs:nodejs /app
+
+# Cambia utente
+USER nextjs
+
+# Esponi la porta (Railway userà la variabile PORT automaticamente)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-3000}/health || exit 1
+
+# Comando di avvio
 CMD ["node", "dist/mcp-server.js"]
