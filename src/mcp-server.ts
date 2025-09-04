@@ -727,16 +727,7 @@ app.get("/", (req, res) => {
     service: "SEOntology MCP Server", 
     version: "2.0.0",
     features: {
-      "nlp": "Improved NLP with domain recognition and title focus",
-      "languages": "Auto-detected (statistical analysis)",
-      "capabilities": [
-        "domain-specific-analysis", 
-        "title-prioritized-extraction", 
-        "schema-type-recommendation",
-        "statistical-language-detection",
-        "intelligent-query-classification"
-      ]
-    },LP with zero hardcoded patterns",
+      "nlp": "Truly Pure NLP with zero hardcoded patterns",
       "languages": "Auto-detected (statistical analysis)",
       "capabilities": [
         "automatic-stop-word-detection", 
