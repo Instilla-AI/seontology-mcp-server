@@ -725,9 +725,18 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => {
   res.json({ 
     service: "SEOntology MCP Server", 
-    version: "1.0.0",
+    version: "2.0.0",
     features: {
-      "nlp": "Truly Pure NLP with zero hardcoded patterns",
+      "nlp": "Improved NLP with domain recognition and title focus",
+      "languages": "Auto-detected (statistical analysis)",
+      "capabilities": [
+        "domain-specific-analysis", 
+        "title-prioritized-extraction", 
+        "schema-type-recommendation",
+        "statistical-language-detection",
+        "intelligent-query-classification"
+      ]
+    },LP with zero hardcoded patterns",
       "languages": "Auto-detected (statistical analysis)",
       "capabilities": [
         "automatic-stop-word-detection", 
@@ -1216,10 +1225,10 @@ const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => {
   console.log(`✅ HTTP server avviato su porta ${PORT}`);
   console.log(`🌍 API endpoint: http://localhost:${PORT}/api/seontology`);
-  console.log(`🧠 Pure NLP Query extraction: http://localhost:${PORT}/api/extract-query`);
+  console.log(`🧠 Improved NLP Query extraction: http://localhost:${PORT}/api/extract-query`);
   console.log(`🔗 MCP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`❤️  Health check: http://localhost:${PORT}/health`);
-  console.log(`🚀 Features: Truly Pure NLP - Zero hardcoded patterns!`);
+  console.log(`🚀 Features: Domain Recognition + Title Focus!`);
 });
 
 // Avvio del server MCP STDIO se eseguito direttamente
