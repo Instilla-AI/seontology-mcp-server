@@ -11,7 +11,7 @@ import {
 // 1) Creazione dell'app Express
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Aggiungi supporto form-urlencoded
+app.use(express.urlencoded({ extended: true })); // Supporto form-urlencoded
 
 // CORS per permettere chiamate da n8n
 app.use((req, res, next) => {
@@ -38,6 +38,7 @@ app.get("/", (req, res) => {
     endpoints: {
       health: "/health",
       seontology: "/api/seontology",
+      extractQuery: "/api/extract-query",
       test: "/api/test",
       mcp: "/mcp (STDIO only)"
     }
@@ -64,7 +65,9 @@ app.post("/api/test", (req, res) => {
   });
 });
 
-// 2) Funzione per creare JSON-LD SEOntology (estratta dal MCP per riuso)
+// 2) Funzioni SEOntology
+
+// Funzione per creare JSON-LD SEOntology
 function createSeontologyJsonLD(args: {
   url: string;
   title: string;
@@ -133,7 +136,173 @@ function createSeontologyJsonLD(args: {
   return jsonld;
 }
 
-// 3) HTTP REST API endpoint per n8n
+// Funzione per estrarre la query principale da una pagina
+function extractMainQuery(args: {
+  url?: string;
+  title: string;
+  metaDescription: string;
+  bodyText: string;
+  language?: string;
+}) {
+  const { url, title, metaDescription, bodyText } = args;
+  const language = args.language ?? "en";
+
+  // Validazione
+  if (!title?.trim() || !bodyText?.trim()) {
+    throw new Error("Title e bodyText sono richiesti per l'estrazione della query");
+  }
+
+  // Combina tutti i testi per l'analisi
+  const allText = `${title} ${metaDescription} ${bodyText}`.toLowerCase();
+  
+  // Parole di stop comuni (basic list)
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+    'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+    'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those'
+  ]);
+
+  // Estrai potenziali keywords
+  const words = allText
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !stopWords.has(word));
+
+  // Conta frequenze
+  const wordFreq = new Map<string, number>();
+  words.forEach(word => {
+    wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+  });
+
+  // Trova bigrammi e trigrammi significativi
+  const ngrams = new Map<string, number>();
+  
+  // Bigrammi
+  for (let i = 0; i < words.length - 1; i++) {
+    const bigram = `${words[i]} ${words[i + 1]}`;
+    if (!stopWords.has(words[i]) && !stopWords.has(words[i + 1])) {
+      ngrams.set(bigram, (ngrams.get(bigram) || 0) + 1);
+    }
+  }
+
+  // Trigrammi
+  for (let i = 0; i < words.length - 2; i++) {
+    const trigram = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+    if (!stopWords.has(words[i]) && !stopWords.has(words[i + 1]) && !stopWords.has(words[i + 2])) {
+      ngrams.set(trigram, (ngrams.get(trigram) || 0) + 1);
+    }
+  }
+
+  // Combina singole parole e ngrams con pesi
+  const candidates = new Map<string, number>();
+  
+  // Pesa le singole parole
+  wordFreq.forEach((freq, word) => {
+    let score = freq;
+    // Boost se appare nel titolo
+    if (title.toLowerCase().includes(word)) score += 3;
+    // Boost se appare nella meta description
+    if (metaDescription.toLowerCase().includes(word)) score += 2;
+    candidates.set(word, score);
+  });
+
+  // Pesa gli ngrams (hanno priorità)
+  ngrams.forEach((freq, ngram) => {
+    let score = freq * 2; // Ngrams hanno peso maggiore
+    // Boost se appare nel titolo
+    if (title.toLowerCase().includes(ngram)) score += 5;
+    // Boost se appare nella meta description
+    if (metaDescription.toLowerCase().includes(ngram)) score += 3;
+    candidates.set(ngram, score);
+  });
+
+  // Ordina per score
+  const sortedCandidates = Array.from(candidates.entries())
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 10);
+
+  // Determina query type basico
+  let queryType = "informational";
+  const commercialTerms = ["buy", "price", "cost", "cheap", "deal", "discount", "shop", "store"];
+  const transactionalTerms = ["download", "get", "free", "trial", "signup", "register"];
+  
+  if (commercialTerms.some(term => allText.includes(term))) {
+    queryType = "commercial";
+  } else if (transactionalTerms.some(term => allText.includes(term))) {
+    queryType = "transactional";
+  }
+
+  // Costruisci il risultato SEOntology
+  const mainQuery = sortedCandidates[0]?.[0] || title.toLowerCase();
+  const alternativeQueries = sortedCandidates.slice(1, 5).map(([query]) => query);
+
+  const result = {
+    "@context": {
+      seo: "https://seontology.org/vocab#",
+      schema: "https://schema.org/"
+    },
+    "@type": "seo:Query",
+    "schema:name": mainQuery,
+    "seo:queryType": queryType,
+    "seo:language": language,
+    "seo:queryScore": sortedCandidates[0]?.[1] || 1,
+    "seo:alternativeQueries": alternativeQueries,
+    "seo:extractedFrom": url || "provided content",
+    "schema:dateCreated": new Date().toISOString()
+  };
+
+  return result;
+}
+
+// 3) HTTP REST API endpoints
+
+// Endpoint per estrarre la query principale
+app.post("/api/extract-query", async (req, res) => {
+  try {
+    const { url, title, metaDescription, bodyText, language } = req.body;
+
+    // Validazione
+    if (!title?.trim()) {
+      throw new Error("Il campo 'title' è richiesto");
+    }
+    if (!bodyText?.trim()) {
+      throw new Error("Il campo 'bodyText' è richiesto");
+    }
+
+    // Estrai la query principale
+    const queryResult = extractMainQuery({
+      url,
+      title,
+      metaDescription: metaDescription || "",
+      bodyText,
+      language
+    });
+
+    const summary = `Query principale estratta: "${queryResult["schema:name"]}"\n` +
+                   `Tipo di query: ${queryResult["seo:queryType"]}\n` +
+                   `Score: ${queryResult["seo:queryScore"]}\n` +
+                   `Query alternative: ${queryResult["seo:alternativeQueries"].join(", ")}\n` +
+                   `Lingua: ${queryResult["seo:language"]}`;
+
+    res.json({
+      success: true,
+      summary: summary,
+      query: queryResult,
+      processedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error("Errore estrazione query:", error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Errore sconosciuto",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint per generare JSON-LD SEOntology
 app.post("/api/seontology", async (req, res) => {
   try {
     const { url, title, metaDescription, primaryQuery, bodyText, language } = req.body;
@@ -189,22 +358,39 @@ app.post("/mcp", async (req, res) => {
         jsonrpc: "2.0",
         id: id,
         result: {
-          tools: [{
-            name: "wrap_as_seontology",
-            description: "Impacchetta url/title/meta (+ testo opzionale) in JSON-LD conforme a SEOntology",
-            inputSchema: {
-              type: "object",
-              properties: {
-                url: { type: "string", description: "URL canonico della pagina web" },
-                title: { type: "string", description: "Titolo HTML/SEO della pagina" },
-                metaDescription: { type: "string", description: "Meta description della pagina" },
-                primaryQuery: { type: "string", description: "Query primaria target" },
-                bodyText: { type: "string", description: "Testo completo della pagina (opzionale)" },
-                language: { type: "string", description: "Codice lingua", default: "it" }
-              },
-              required: ["url", "title", "metaDescription", "primaryQuery"]
+          tools: [
+            {
+              name: "wrap_as_seontology",
+              description: "Impacchetta url/title/meta (+ testo opzionale) in JSON-LD conforme a SEOntology",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  url: { type: "string", description: "URL canonico della pagina web" },
+                  title: { type: "string", description: "Titolo HTML/SEO della pagina" },
+                  metaDescription: { type: "string", description: "Meta description della pagina" },
+                  primaryQuery: { type: "string", description: "Query primaria target" },
+                  bodyText: { type: "string", description: "Testo completo della pagina (opzionale)" },
+                  language: { type: "string", description: "Codice lingua", default: "it" }
+                },
+                required: ["url", "title", "metaDescription", "primaryQuery"]
+              }
+            },
+            {
+              name: "extract_main_query",
+              description: "Estrae la query principale da una pagina analizzando titolo, descrizione e contenuto",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  title: { type: "string", description: "Titolo HTML/SEO della pagina" },
+                  metaDescription: { type: "string", description: "Meta description della pagina" },
+                  bodyText: { type: "string", description: "Testo completo della pagina" },
+                  url: { type: "string", description: "URL della pagina (opzionale)" },
+                  language: { type: "string", description: "Codice lingua", default: "en" }
+                },
+                required: ["title", "bodyText"]
+              }
             }
-          }]
+          ]
         }
       });
     }
@@ -225,6 +411,27 @@ app.post("/mcp", async (req, res) => {
           content: [
             { type: "text", text: summary },
             { type: "text", text: JSON.stringify(jsonld, null, 2) }
+          ]
+        }
+      });
+    }
+
+    if (method === "tools/call" && params?.name === "extract_main_query") {
+      const queryResult = extractMainQuery(params.arguments);
+      
+      const summary = `Query principale estratta: "${queryResult["schema:name"]}"\n` +
+                     `Tipo di query: ${queryResult["seo:queryType"]}\n` +
+                     `Score: ${queryResult["seo:queryScore"]}\n` +
+                     `Query alternative: ${queryResult["seo:alternativeQueries"].join(", ")}\n` +
+                     `Lingua: ${queryResult["seo:language"]}`;
+
+      return res.json({
+        jsonrpc: "2.0",
+        id: id,
+        result: {
+          content: [
+            { type: "text", text: summary },
+            { type: "text", text: JSON.stringify(queryResult, null, 2) }
           ]
         }
       });
@@ -261,22 +468,39 @@ async function initMcpServer() {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [{
-        name: "wrap_as_seontology",
-        description: "Impacchetta url/title/meta (+ testo opzionale) in JSON-LD conforme a SEOntology",
-        inputSchema: {
-          type: "object",
-          properties: {
-            url: { type: "string", description: "URL canonico della pagina web" },
-            title: { type: "string", description: "Titolo HTML/SEO della pagina" },
-            metaDescription: { type: "string", description: "Meta description della pagina" },
-            primaryQuery: { type: "string", description: "Query primaria target" },
-            bodyText: { type: "string", description: "Testo completo della pagina (opzionale)" },
-            language: { type: "string", description: "Codice lingua", default: "it" }
-          },
-          required: ["url", "title", "metaDescription", "primaryQuery"]
+      tools: [
+        {
+          name: "wrap_as_seontology",
+          description: "Impacchetta url/title/meta (+ testo opzionale) in JSON-LD conforme a SEOntology",
+          inputSchema: {
+            type: "object",
+            properties: {
+              url: { type: "string", description: "URL canonico della pagina web" },
+              title: { type: "string", description: "Titolo HTML/SEO della pagina" },
+              metaDescription: { type: "string", description: "Meta description della pagina" },
+              primaryQuery: { type: "string", description: "Query primaria target" },
+              bodyText: { type: "string", description: "Testo completo della pagina (opzionale)" },
+              language: { type: "string", description: "Codice lingua", default: "it" }
+            },
+            required: ["url", "title", "metaDescription", "primaryQuery"]
+          }
+        },
+        {
+          name: "extract_main_query",
+          description: "Estrae la query principale da una pagina analizzando titolo, descrizione e contenuto",
+          inputSchema: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "Titolo HTML/SEO della pagina" },
+              metaDescription: { type: "string", description: "Meta description della pagina" },
+              bodyText: { type: "string", description: "Testo completo della pagina" },
+              url: { type: "string", description: "URL della pagina (opzionale)" },
+              language: { type: "string", description: "Codice lingua", default: "en" }
+            },
+            required: ["title", "bodyText"]
+          }
         }
-      }]
+      ]
     };
   });
 
@@ -321,6 +545,7 @@ const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => {
   console.log(`✅ HTTP server avviato su porta ${PORT}`);
   console.log(`🌍 API endpoint: http://localhost:${PORT}/api/seontology`);
+  console.log(`🔍 Query extraction: http://localhost:${PORT}/api/extract-query`);
   console.log(`🔗 MCP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`❤️  Health check: http://localhost:${PORT}/health`);
 });
