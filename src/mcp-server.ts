@@ -283,19 +283,31 @@ async function initMcpServer() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
-    if (name !== "wrap_as_seontology") {
-      throw new McpError(ErrorCode.MethodNotFound, `Tool non trovato: ${name}`);
+    if (name === "wrap_as_seontology") {
+      const jsonld = createSeontologyJsonLD(args as any);
+      const summary = `JSON-LD SEOntology creato con successo per: ${(args as any).title}`;
+
+      return {
+        content: [
+          { type: "text", text: summary },
+          { type: "text", text: JSON.stringify(jsonld, null, 2) }
+        ]
+      };
     }
 
-    const jsonld = createSeontologyJsonLD(args as any);
-    const summary = `JSON-LD SEOntology creato con successo per: ${(args as any).title}`;
+    if (name === "extract_main_query") {
+      const queryResult = extractMainQuery(args as any);
+      const summary = `Query principale estratta: "${queryResult["schema:name"]}" (${queryResult["seo:queryType"]})`;
 
-    return {
-      content: [
-        { type: "text", text: summary },
-        { type: "text", text: JSON.stringify(jsonld, null, 2) }
-      ]
-    };
+      return {
+        content: [
+          { type: "text", text: summary },
+          { type: "text", text: JSON.stringify(queryResult, null, 2) }
+        ]
+      };
+    }
+
+    throw new McpError(ErrorCode.MethodNotFound, `Tool non trovato: ${name}`);
   });
 
   const transport = new StdioServerTransport();
